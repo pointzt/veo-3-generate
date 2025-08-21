@@ -77,7 +77,7 @@ function App() {
         </div>
 
         {/* Main Content */}
-        <div className="grid lg:grid-cols-2 gap-8 max-w-7xl mx-auto">
+        <div className="grid grid-cols-2 gap-8 max-w-7xl mx-auto">
           {/* Left Column - Controls */}
           <div className="bg-white rounded-2xl shadow-xl p-8 space-y-6">
             <h2 className="text-2xl font-semibold text-slate-800 mb-6">Generate Video</h2>
@@ -168,7 +168,7 @@ function App() {
           <div className="bg-white rounded-2xl shadow-xl p-8">
             <h2 className="text-2xl font-semibold text-slate-800 mb-6">Generated Video</h2>
             
-            <div className="aspect-video bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden">
+            <div className={`${aspectRatio === '16:9' ? 'aspect-video' : 'aspect-[9/16]'} bg-slate-50 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center overflow-hidden`}>
               {isLoading ? (
                 <div className="text-center">
                   <Loader2 className="w-12 h-12 text-blue-600 animate-spin mx-auto mb-4" />
@@ -184,7 +184,7 @@ function App() {
               ) : videoUrl ? (
                 <video
                   controls
-                  className="w-full h-full rounded-lg"
+                  className="w-full h-full rounded-lg object-contain bg-black"
                   poster=""
                 >
                   <source src={videoUrl} type="video/mp4" />
