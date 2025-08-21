@@ -18,6 +18,15 @@ interface ErrorDetails {
   hint?: string;
 }
 
+class AppError extends Error {
+  details?: ErrorDetails;
+  constructor(message: string, details?: ErrorDetails) {
+    super(message);
+    this.name = 'AppError';
+    this.details = details;
+  }
+}
+
 function App() {
   const [prompt, setPrompt] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -93,31 +102,36 @@ function App() {
         else if (response.status === 429) message = 'Rate limit exceeded. Please try again later.';
         else if (response.status >= 500) message = 'Server error. Please try again later.';
 
-        message = data?.error || message || `API request failed with status ${response.status}`;
-        setErrorDetails({
+        const statusInfo = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
+        message = data?.error || `${message} (${statusInfo})`;
+        const details: ErrorDetails = {
           url: requestUrl,
           status: response.status,
           statusText: response.statusText,
           contentType,
           responseBody: rawText || (data ? JSON.stringify(data) : ''),
           hint: baseUrl === '/api' ? 'In dev, ensure Vite proxy is running. In production, set VITE_API_BASE_URL to your backend proxy to avoid CORS.' : undefined,
-        });
-        throw new Error(message);
+        };
+        throw new AppError(message, details);
       }
 
       if (data?.success && data.videoUrl) {
         setVideoUrl(data.videoUrl);
       } else {
         const message = data?.error || 'The API did not return a video URL.';
-        setErrorDetails({
+        const details: ErrorDetails = {
           url: requestUrl,
           contentType,
           responseBody: rawText || (data ? JSON.stringify(data) : ''),
-        });
-        throw new Error(message);
+        };
+        throw new AppError(message, details);
       }
     } catch (err) {
       let errorMessage = 'An unexpected error occurred';
+      if (err instanceof AppError) {
+        errorMessage = err.message || errorMessage;
+        if (err.details) setErrorDetails(err.details);
+      }
       if (err instanceof DOMException && err.name === 'AbortError') {
         errorMessage = 'The request timed out. Please try again.';
       } else if (err instanceof TypeError) {
@@ -131,14 +145,16 @@ function App() {
         }));
       } else if (err instanceof Error) {
         errorMessage = err.message || errorMessage;
-        setErrorDetails((prev) => ({
-          url: (prev?.url) || requestUrl,
-          errorName: err.name,
-          errorMessage: err.message,
-        }));
+        setErrorDetails((prev) => (
+          prev || {
+            url: requestUrl,
+            errorName: err.name,
+            errorMessage: err.message,
+          }
+        ));
       }
       setError(errorMessage);
-      console.error('Video generation error:', err, errorDetails);
+      console.error('Video generation error:', err);
     } finally {
       setIsLoading(false);
     }
