@@ -7,6 +7,17 @@ interface ApiResponse {
   error?: string;
 }
 
+interface ErrorDetails {
+  url: string;
+  status?: number;
+  statusText?: string;
+  contentType?: string;
+  responseBody?: string;
+  errorName?: string;
+  errorMessage?: string;
+  hint?: string;
+}
+
 function App() {
   const [prompt, setPrompt] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -14,6 +25,8 @@ function App() {
   const [isLoading, setIsLoading] = useState(false);
   const [videoUrl, setVideoUrl] = useState('');
   const [error, setError] = useState('');
+  const [errorDetails, setErrorDetails] = useState<ErrorDetails | null>(null);
+  const [showErrorDetails, setShowErrorDetails] = useState(false);
 
   const handleGenerate = async () => {
     // Validation
@@ -30,14 +43,19 @@ function App() {
     setIsLoading(true);
     setError('');
     setVideoUrl('');
+    setErrorDetails(null);
+    setShowErrorDetails(false);
+
+    // Build request URL ahead so we can include it in error details
+    const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+    const requestUrl = `${baseUrl}/generate`;
 
     try {
       const controller = new AbortController();
       const timeoutMs = 30000;
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
-      const response = await fetch(`${baseUrl}/generate`, {
+      const response = await fetch(requestUrl, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -76,6 +94,14 @@ function App() {
         else if (response.status >= 500) message = 'Server error. Please try again later.';
 
         message = data?.error || message || `API request failed with status ${response.status}`;
+        setErrorDetails({
+          url: requestUrl,
+          status: response.status,
+          statusText: response.statusText,
+          contentType,
+          responseBody: rawText || (data ? JSON.stringify(data) : ''),
+          hint: baseUrl === '/api' ? 'In dev, ensure Vite proxy is running. In production, set VITE_API_BASE_URL to your backend proxy to avoid CORS.' : undefined,
+        });
         throw new Error(message);
       }
 
@@ -83,6 +109,11 @@ function App() {
         setVideoUrl(data.videoUrl);
       } else {
         const message = data?.error || 'The API did not return a video URL.';
+        setErrorDetails({
+          url: requestUrl,
+          contentType,
+          responseBody: rawText || (data ? JSON.stringify(data) : ''),
+        });
         throw new Error(message);
       }
     } catch (err) {
@@ -92,11 +123,22 @@ function App() {
       } else if (err instanceof TypeError) {
         // Browser fetch network/CORS errors are TypeError
         errorMessage = 'Network error or CORS blocked the request. If this persists, try a server-side proxy.';
+        setErrorDetails((prev) => ({
+          url: (prev?.url) || requestUrl,
+          errorName: 'TypeError',
+          errorMessage: (err as TypeError).message,
+          hint: baseUrl === '/api' ? 'Proxy likely not active. Run `npm run dev` or set VITE_API_BASE_URL to a server-side proxy.' : 'Verify the target allows CORS or route via your backend.',
+        }));
       } else if (err instanceof Error) {
         errorMessage = err.message || errorMessage;
+        setErrorDetails((prev) => ({
+          url: (prev?.url) || requestUrl,
+          errorName: err.name,
+          errorMessage: err.message,
+        }));
       }
       setError(errorMessage);
-      console.error('Video generation error:', err);
+      console.error('Video generation error:', err, errorDetails);
     } finally {
       setIsLoading(false);
     }
@@ -218,6 +260,21 @@ function App() {
                   <AlertCircle className="w-12 h-12 text-red-500 mx-auto mb-4" />
                   <p className="text-red-600 font-medium mb-2">Generation Failed</p>
                   <p className="text-slate-600 text-sm leading-relaxed">{error}</p>
+                  {errorDetails && (
+                    <div className="mt-4">
+                      <button
+                        onClick={() => setShowErrorDetails((s) => !s)}
+                        className="text-xs text-blue-600 hover:text-blue-800 underline"
+                      >
+                        {showErrorDetails ? 'Hide technical details' : 'Show technical details'}
+                      </button>
+                      {showErrorDetails && (
+                        <pre className="mt-2 text-left text-xs bg-slate-50 border border-slate-200 rounded-lg p-3 overflow-auto max-h-64">
+{JSON.stringify(errorDetails, null, 2)}
+                        </pre>
+                      )}
+                    </div>
+                  )}
                 </div>
               ) : videoUrl ? (
                 <video
