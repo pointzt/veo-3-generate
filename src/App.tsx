@@ -32,6 +32,10 @@ function App() {
     setVideoUrl('');
 
     try {
+      const controller = new AbortController();
+      const timeoutMs = 30000;
+      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
       const response = await fetch('https://api.veo3.ai/generate', {
         method: 'POST',
         headers: {
@@ -41,22 +45,55 @@ function App() {
         body: JSON.stringify({
           prompt: prompt.trim(),
           aspect_ratio: aspectRatio
-        })
+        }),
+        signal: controller.signal
       });
 
-      const data: ApiResponse = await response.json();
+      clearTimeout(timeoutId);
+
+      // Try JSON first; fall back to text
+      let data: ApiResponse | undefined;
+      let rawText = '';
+      const contentType = response.headers.get('content-type') || '';
+      try {
+        if (contentType.includes('application/json')) {
+          data = await response.json();
+        } else {
+          rawText = await response.text();
+          data = JSON.parse(rawText);
+        }
+      } catch {
+        // Non-JSON response
+        if (!rawText) rawText = await response.text().catch(() => '');
+      }
 
       if (!response.ok) {
-        throw new Error(data.error || `API request failed with status ${response.status}`);
+        let message = 'Failed to generate video.';
+        if (response.status === 401) message = 'Invalid or missing API key.';
+        else if (response.status === 403) message = 'Access denied. Check your API plan or permissions.';
+        else if (response.status === 429) message = 'Rate limit exceeded. Please try again later.';
+        else if (response.status >= 500) message = 'Server error. Please try again later.';
+
+        message = data?.error || message || `API request failed with status ${response.status}`;
+        throw new Error(message);
       }
 
-      if (data.success && data.videoUrl) {
+      if (data?.success && data.videoUrl) {
         setVideoUrl(data.videoUrl);
       } else {
-        throw new Error(data.error || 'Failed to generate video');
+        const message = data?.error || 'The API did not return a video URL.';
+        throw new Error(message);
       }
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'An unexpected error occurred';
+      let errorMessage = 'An unexpected error occurred';
+      if (err instanceof DOMException && err.name === 'AbortError') {
+        errorMessage = 'The request timed out. Please try again.';
+      } else if (err instanceof TypeError) {
+        // Browser fetch network/CORS errors are TypeError
+        errorMessage = 'Network error or CORS blocked the request. If this persists, try a server-side proxy.';
+      } else if (err instanceof Error) {
+        errorMessage = err.message || errorMessage;
+      }
       setError(errorMessage);
       console.error('Video generation error:', err);
     } finally {
