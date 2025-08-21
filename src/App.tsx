@@ -36,7 +36,8 @@ function App() {
       const timeoutMs = 30000;
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
-      const response = await fetch('https://api.veo3.ai/generate', {
+      const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+      const response = await fetch(`${baseUrl}/generate`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
