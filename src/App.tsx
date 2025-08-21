@@ -32,15 +32,16 @@ function App() {
     setVideoUrl('');
 
     try {
-      const response = await fetch('https://api.veo3.ai/generate', {
+      const response = await fetch('/api/generate', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
+          // API key is sent in body to proxy or pick from server env
         },
         body: JSON.stringify({
           prompt: prompt.trim(),
-          aspect_ratio: aspectRatio
+          aspect_ratio: aspectRatio,
+          apiKey: apiKey.trim(),
         })
       });
 
