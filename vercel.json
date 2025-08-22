@@ -1,13 +1,4 @@
 {
   "buildCommand": "npm run build",
-  "devCommand": "npm run dev",
-  "framework": "vite",
-  "routes": [
-    { "src": "/api/(.*)", "dest": "/api/$1" }
-  ],
-  "functions": {
-    "api/*.ts": {
-      "runtime": "nodejs18.x"
-    }
-  }
+  "devCommand": "npm run dev"
 }

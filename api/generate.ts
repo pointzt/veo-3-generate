@@ -1,5 +1,4 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import fetch from 'node-fetch';
 
 const UPSTREAM = process.env.UPSTREAM_BASE_URL || 'https://api.veo3.ai';
 
