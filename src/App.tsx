@@ -28,6 +28,31 @@ class AppError extends Error {
   }
 }
 
+function getSafeApiBaseUrl(): string {
+  const envBase = import.meta.env.VITE_API_BASE_URL as string | undefined;
+  const isBrowser = typeof window !== 'undefined';
+  const isDev = import.meta.env.MODE === 'development';
+  if (!envBase) return '/api';
+  if (envBase.startsWith('/')) return envBase; // same-origin path
+  if (envBase.startsWith('http')) {
+    if (!isBrowser) return envBase;
+    try {
+      const envUrl = new URL(envBase);
+      const curr = new URL(window.location.origin);
+      const sameOrigin = envUrl.origin === curr.origin;
+      const isLocalhost = /localhost|127\.0\.0\.1/.test(envUrl.hostname);
+      if (!isDev && (isLocalhost || !sameOrigin)) {
+        // In production, avoid pointing to localhost or cross-origin to prevent CORS/network errors
+        return '/api';
+      }
+      return envBase;
+    } catch {
+      return '/api';
+    }
+  }
+  return '/api';
+}
+
 function App() {
   const [prompt, setPrompt] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -57,7 +82,7 @@ function App() {
     setShowErrorDetails(false);
 
     // Build request URL ahead so we can include it in error details
-    const baseUrl = import.meta.env.VITE_API_BASE_URL || '/api';
+    const baseUrl = getSafeApiBaseUrl();
     const requestUrl = `${baseUrl}/generate`;
 
     try {
@@ -111,7 +136,7 @@ function App() {
           statusText: response.statusText,
           contentType,
           responseBody: rawText || (data ? JSON.stringify(data) : ''),
-          hint: baseUrl === '/api' ? 'In dev, ensure Vite proxy is running. In production, set VITE_API_BASE_URL to your backend proxy to avoid CORS.' : undefined,
+          hint: baseUrl === '/api' ? 'On Vercel, /api is handled by the serverless function. Ensure deployment succeeded.' : undefined,
           baseUrl,
         };
         throw new AppError(message, details);
@@ -131,6 +156,7 @@ function App() {
       }
     } catch (err) {
       let errorMessage = 'An unexpected error occurred';
+      const baseUrl = getSafeApiBaseUrl();
       if (err instanceof AppError) {
         errorMessage = err.message || errorMessage;
         if (err.details) setErrorDetails(err.details);
@@ -141,17 +167,17 @@ function App() {
         // Browser fetch network/CORS errors are TypeError
         errorMessage = 'Network error or CORS blocked the request. If this persists, try a server-side proxy.';
         setErrorDetails((prev) => ({
-          url: (prev?.url) || requestUrl,
+          url: (prev?.url) || `${baseUrl}/generate`,
           errorName: 'TypeError',
           errorMessage: (err as TypeError).message,
-          hint: baseUrl === '/api' ? 'Proxy likely not active. Run `npm run dev` or set VITE_API_BASE_URL to a server-side proxy.' : 'Verify the target allows CORS or route via your backend.',
+          hint: 'On Vercel, ensure the `api/generate.ts` function exists and deploy completed. If running locally, avoid using localhost base URL in production builds.',
           baseUrl,
         }));
       } else if (err instanceof Error) {
         errorMessage = err.message || errorMessage;
         setErrorDetails((prev) => (
           prev || {
-            url: requestUrl,
+            url: `${baseUrl}/generate`,
             errorName: err.name,
             errorMessage: err.message,
             baseUrl,
