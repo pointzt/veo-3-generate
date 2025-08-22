@@ -1,6 +1,18 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
+import fetch from 'node-fetch';
 
 const UPSTREAM = process.env.UPSTREAM_BASE_URL || 'https://api.veo3.ai';
+
+async function readRawBody(req: VercelRequest): Promise<string> {
+	return await new Promise((resolve, reject) => {
+		let data = '';
+		req.on('data', (chunk) => {
+			data += chunk;
+		});
+		req.on('end', () => resolve(data));
+		req.on('error', reject);
+	});
+}
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
 	if (req.method !== 'POST') {
@@ -9,13 +21,26 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 	}
 	try {
 		const auth = req.headers['authorization'];
+		let bodyString: string;
+		if (req.body && typeof req.body === 'object') {
+			try {
+				bodyString = JSON.stringify(req.body);
+			} catch {
+				bodyString = await readRawBody(req);
+			}
+		} else if (typeof req.body === 'string') {
+			bodyString = req.body;
+		} else {
+			bodyString = await readRawBody(req);
+		}
+
 		const upstreamRes = await fetch(`${UPSTREAM}/generate`, {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
 				...(auth ? { Authorization: String(auth) } : {}),
 			},
-			body: JSON.stringify(req.body ?? {}),
+			body: bodyString || '{}',
 		});
 
 		const contentType = upstreamRes.headers.get('content-type') || '';
