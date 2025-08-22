@@ -10,9 +10,8 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'https://api.veo3.ai',
+        target: 'http://localhost:5174',
         changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api/, ''),
       },
     },
   },
