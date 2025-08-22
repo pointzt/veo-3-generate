@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
 import { Play, Loader2, AlertCircle, Video } from 'lucide-react';
 
-interface ApiResponse {
+interface StartResponse {
   success: boolean;
-  videoUrl?: string;
+  operationName?: string;
   error?: string;
 }
 
@@ -53,6 +53,10 @@ function getSafeApiBaseUrl(): string {
   return '/api';
 }
 
+function sleep(ms: number) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 function App() {
   const [prompt, setPrompt] = useState('');
   const [apiKey, setApiKey] = useState('');
@@ -78,79 +82,94 @@ function App() {
 
     // Build request URL ahead so we can include it in error details
     const baseUrl = getSafeApiBaseUrl();
-    const requestUrl = `${baseUrl}/generate`;
+    const startUrl = `${baseUrl}/generate`;
 
     try {
-      const controller = new AbortController();
-      const timeoutMs = 30000;
-      const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
-
-      const headers: Record<string, string> = {
-        'Content-Type': 'application/json',
-      };
-      if (apiKey.trim()) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
-
-      const response = await fetch(requestUrl, {
+      // Start long-running operation
+      const startRes = await fetch(startUrl, {
         method: 'POST',
-        headers,
+        headers: {
+          'Content-Type': 'application/json',
+        },
         body: JSON.stringify({
           prompt: prompt.trim(),
-          aspect_ratio: aspectRatio
-        }),
-        signal: controller.signal
+          aspect_ratio: aspectRatio,
+        })
       });
 
-      clearTimeout(timeoutId);
-
-      // Try JSON first; fall back to text
-      let data: ApiResponse | undefined;
-      let rawText = '';
-      const contentType = response.headers.get('content-type') || '';
+      const startContentType = startRes.headers.get('content-type') || '';
+      let startData: StartResponse | undefined;
+      let startRaw = '';
       try {
-        if (contentType.includes('application/json')) {
-          data = await response.json();
+        if (startContentType.includes('application/json')) {
+          startData = await startRes.json();
         } else {
-          rawText = await response.text();
-          data = JSON.parse(rawText);
+          startRaw = await startRes.text();
+          startData = JSON.parse(startRaw);
         }
       } catch {
-        // Non-JSON response
-        if (!rawText) rawText = await response.text().catch(() => '');
+        if (!startRaw) startRaw = await startRes.text().catch(() => '');
       }
 
-      if (!response.ok) {
-        let message = 'Failed to generate video.';
-        if (response.status === 401) message = 'Invalid or missing API key.';
-        else if (response.status === 403) message = 'Access denied. Check your API plan or permissions.';
-        else if (response.status === 429) message = 'Rate limit exceeded. Please try again later.';
-        else if (response.status >= 500) message = 'Server error. Please try again later.';
-
-        const statusInfo = `${response.status}${response.statusText ? ` ${response.statusText}` : ''}`;
-        message = data?.error || `${message} (${statusInfo})`;
-        const details: ErrorDetails = {
-          url: requestUrl,
-          status: response.status,
-          statusText: response.statusText,
-          contentType,
-          responseBody: rawText || (data ? JSON.stringify(data) : ''),
-          hint: baseUrl === '/api' ? 'On Vercel, /api is handled by the serverless function. Ensure deployment succeeded.' : undefined,
+      if (!startRes.ok || !startData?.success || !startData.operationName) {
+        const message = startData?.error || `Failed to start generation (${startRes.status})`;
+        throw new AppError(message, {
+          url: startUrl,
+          status: startRes.status,
+          statusText: startRes.statusText,
+          contentType: startContentType,
+          responseBody: startRaw || (startData ? JSON.stringify(startData) : ''),
           baseUrl,
-        };
-        throw new AppError(message, details);
+        });
       }
 
-      if (data?.success && data.videoUrl) {
-        setVideoUrl(data.videoUrl);
-      } else {
-        const message = data?.error || 'The API did not return a video URL.';
-        const details: ErrorDetails = {
-          url: requestUrl,
-          contentType,
-          responseBody: rawText || (data ? JSON.stringify(data) : ''),
-          baseUrl,
-        };
-        throw new AppError(message, details);
+      const operationName = startData.operationName;
+
+      // Poll operation until done
+      const pollUrl = `${baseUrl}/operation?name=${encodeURIComponent(operationName)}`;
+      const maxAttempts = 60; // ~10 minutes at 10s interval
+      const intervalMs = 10000;
+      let videoUri: string | undefined;
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const opRes = await fetch(pollUrl, { method: 'GET' });
+        const opContentType = opRes.headers.get('content-type') || '';
+        const opText = await opRes.text();
+        let opJson: any = {};
+        try { opJson = opText ? JSON.parse(opText) : {}; } catch {}
+
+        if (!opRes.ok) {
+          throw new AppError(`Operation polling failed (${opRes.status})`, {
+            url: pollUrl,
+            status: opRes.status,
+            statusText: opRes.statusText,
+            contentType: opContentType,
+            responseBody: opText,
+            baseUrl,
+          });
+        }
+
+        if (opJson?.done) {
+          videoUri = opJson?.response?.generateVideoResponse?.generatedSamples?.[0]?.video?.uri;
+          if (!videoUri) {
+            throw new AppError('Operation completed without video URI', {
+              url: pollUrl,
+              contentType: opContentType,
+              responseBody: opText,
+              baseUrl,
+            });
+          }
+          break;
+        }
+        await sleep(intervalMs);
       }
+
+      if (!videoUri) {
+        throw new AppError('Timed out waiting for video generation to complete');
+      }
+
+      // Use proxy to stream video (handles auth)
+      const videoProxyUrl = `${baseUrl}/video?uri=${encodeURIComponent(videoUri)}`;
+      setVideoUrl(videoProxyUrl);
     } catch (err) {
       let errorMessage = 'An unexpected error occurred';
       const baseUrl = getSafeApiBaseUrl();
@@ -167,7 +186,7 @@ function App() {
           url: (prev?.url) || `${baseUrl}/generate`,
           errorName: 'TypeError',
           errorMessage: (err as TypeError).message,
-          hint: 'On Vercel, ensure the `api/generate.ts` function exists and deploy completed. If running locally, avoid using localhost base URL in production builds.',
+          hint: 'On Vercel, ensure the API functions are deployed and GEMINI_API_KEY is set.',
           baseUrl,
         }));
       } else if (err instanceof Error) {
