@@ -16,6 +16,7 @@ interface ErrorDetails {
   errorName?: string;
   errorMessage?: string;
   hint?: string;
+  baseUrl?: string;
 }
 
 class AppError extends Error {
@@ -111,6 +112,7 @@ function App() {
           contentType,
           responseBody: rawText || (data ? JSON.stringify(data) : ''),
           hint: baseUrl === '/api' ? 'In dev, ensure Vite proxy is running. In production, set VITE_API_BASE_URL to your backend proxy to avoid CORS.' : undefined,
+          baseUrl,
         };
         throw new AppError(message, details);
       }
@@ -123,6 +125,7 @@ function App() {
           url: requestUrl,
           contentType,
           responseBody: rawText || (data ? JSON.stringify(data) : ''),
+          baseUrl,
         };
         throw new AppError(message, details);
       }
@@ -142,6 +145,7 @@ function App() {
           errorName: 'TypeError',
           errorMessage: (err as TypeError).message,
           hint: baseUrl === '/api' ? 'Proxy likely not active. Run `npm run dev` or set VITE_API_BASE_URL to a server-side proxy.' : 'Verify the target allows CORS or route via your backend.',
+          baseUrl,
         }));
       } else if (err instanceof Error) {
         errorMessage = err.message || errorMessage;
@@ -150,6 +154,7 @@ function App() {
             url: requestUrl,
             errorName: err.name,
             errorMessage: err.message,
+            baseUrl,
           }
         ));
       }
