@@ -13,7 +13,10 @@ export default async function handler(req: Request): Promise<Response> {
 	}
 
 	try {
-		const auth = req.headers.get('authorization') || '';
+		const clientAuth = req.headers.get('authorization') || '';
+		const serverKey = (process.env.VEO3_API_KEY || process.env.API_KEY || '').trim();
+		const authHeader = clientAuth || (serverKey ? `Bearer ${serverKey}` : '');
+
 		let bodyString = '';
 		try {
 			bodyString = await req.text();
@@ -25,9 +28,11 @@ export default async function handler(req: Request): Promise<Response> {
 			method: 'POST',
 			headers: {
 				'Content-Type': 'application/json',
-				...(auth ? { Authorization: auth } : {}),
+				'Accept': 'application/json',
+				...(authHeader ? { Authorization: authHeader } : {}),
 			},
 			body: bodyString || '{}',
+			signal: (AbortSignal as any).timeout ? (AbortSignal as any).timeout(60000) : undefined,
 		});
 
 		const contentType = upstreamRes.headers.get('content-type') || '';
@@ -45,8 +50,9 @@ export default async function handler(req: Request): Promise<Response> {
 				headers: { 'content-type': contentType || 'text/plain' },
 			});
 		}
-	} catch (err) {
-		return new Response(JSON.stringify({ success: false, error: 'Proxy error contacting upstream' }), {
+	} catch (err: any) {
+		const message = typeof err?.message === 'string' ? err.message : 'Proxy error contacting upstream';
+		return new Response(JSON.stringify({ success: false, error: message }), {
 			status: 502,
 			headers: { 'content-type': 'application/json' },
 		});

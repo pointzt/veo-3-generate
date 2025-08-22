@@ -69,11 +69,6 @@ function App() {
       alert('Please enter a video prompt');
       return;
     }
-    
-    if (!apiKey.trim()) {
-      alert('Please enter your Veo 3 API key');
-      return;
-    }
 
     setIsLoading(true);
     setError('');
@@ -90,12 +85,14 @@ function App() {
       const timeoutMs = 30000;
       const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
 
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      };
+      if (apiKey.trim()) headers['Authorization'] = `Bearer ${apiKey.trim()}`;
+
       const response = await fetch(requestUrl, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': `Bearer ${apiKey}`
-        },
+        headers,
         body: JSON.stringify({
           prompt: prompt.trim(),
           aspect_ratio: aspectRatio
@@ -224,17 +221,17 @@ function App() {
               />
             </div>
 
-            {/* API Key Input */}
+            {/* API Key Input (optional) */}
             <div className="space-y-2">
               <label htmlFor="apiKey" className="block text-sm font-medium text-slate-700">
-                Veo 3 API Key
+                Veo 3 API Key (optional)
               </label>
               <input
                 id="apiKey"
                 type="password"
                 value={apiKey}
                 onChange={(e) => setApiKey(e.target.value)}
-                placeholder="Enter your API Key"
+                placeholder="Enter your API Key (or set server key in Vercel)"
                 className="w-full px-4 py-3 border border-slate-300 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 text-slate-800 placeholder-slate-400"
                 disabled={isLoading}
               />
@@ -274,7 +271,7 @@ function App() {
             {/* Generate Button */}
             <button
               onClick={handleGenerate}
-              disabled={isLoading || !prompt.trim() || !apiKey.trim()}
+              disabled={isLoading || !prompt.trim()}
               className="w-full bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 disabled:from-slate-400 disabled:to-slate-500 text-white font-semibold py-4 px-6 rounded-xl transition-all duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-xl disabled:hover:shadow-lg"
             >
               {isLoading ? (
