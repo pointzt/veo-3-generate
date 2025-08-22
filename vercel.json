@@ -1,0 +1,8 @@
+{
+  "buildCommand": "npm run build",
+  "devCommand": "npm run dev",
+  "framework": "vite",
+  "routes": [
+    { "src": "/api/(.*)", "dest": "/api/$1" }
+  ]
+}
